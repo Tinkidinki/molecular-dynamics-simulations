@@ -5,8 +5,13 @@ import shutil
 import os
 import glob
 
-#Make True for periodic boundary conditions
-PERIODIC = True
+#Select functionality as "euler", "verlet" or "periodic_verlet"
+INTEGRATION_TYPE = "periodic_verlet"
+
+#Change virial coefficients:
+V_1 = 0.5
+V_2 = 0.4
+
 
 class Simulator():
     # Please give volume in m^3 and step_size in seconds
@@ -18,7 +23,7 @@ class Simulator():
         self.num_steps = num_steps
         self.step_size = step_size
         self.len = self.V**(1/3)
-        self.m = 6.624 * 10**-26
+        self.m = 6.624 * 10**-26  # Mass of argon
 
     def get_rand_pos(self):
         return [random.uniform(0, self.len) for i in range(3)]
@@ -58,11 +63,12 @@ class Simulator():
     # Check value of force
     def calc_force(self,pos1, pos2):
         diff = pos1 - pos2
-        
-        r = np.linalg.norm(diff)
 
-        if (PERIODIC):
-            if (r > self.len): r = r - self.len
+        if INTEGRATION_TYPE == "periodic_verlet":
+            for i in range(len(diff)):
+                if diff[i] >= self.len: diff[i] %= self.len
+
+        r = np.linalg.norm(diff)
         force = 8*self.e*(6*self.e**12/r**14 - 3*self.s**6/r**8)* diff
         return force
     
@@ -105,76 +111,136 @@ class Simulator():
         plt.savefig(folder+'/momentum.png')
         plt.show()
 
+    def temp(self, avg_ke): return 2/3*(6.023*10**23)/8.314*avg_ke
+
     def write_energies(self, folder):
         with open(folder+"/energy.txt", "a+") as f:
             for i in range(self.num_steps):
                 f.write(str(self.kinetic_energy[i])+ " ")
                 f.write(str(self.potential_energy[i])+ "\n")
 
+        with open(folder + "/temp_pressure.txt", "a+") as f:
+            for i in range(self.num_steps):
+                temp = self.temp(self.kinetic_energy[i]/self.N)
+                Z = 1 + V_1*(self.N/self.V) + V_2*(self.N/self.V)**2
+                pressure = 8.314*temp*Z
+                f.write(str(temp) + "    " + str(pressure) + "\n")
+
+        with open(folder + "/pressure.txt", "a+") as f:
+            for i in range(self.num_steps):
+                
+                f.write(str())
+
     
     def do_calculations(self):
+
+    #------------------------------------------EULER INTEGRATION-------------------------------------------------
    
+        if INTEGRATION_TYPE == "euler": 
 
-        # files = glob.glob('Euler/*')
-        # for f in files:
-        #     os.remove(f)
+            files = glob.glob('Euler/*')
+            for f in files:
+                os.remove(f)
 
-        files = glob.glob('Verlet/*')
-        for f in files:
-            os.remove(f)
-
-        # self.initialise_system()
-
-        # for t in range(self.num_steps):
-        #     self.write_to_file(t, "Euler")
-
-        #     self.make_force_vector()
-        #     self.momentum_vector += self.force*self.step_size
-        #     self.position_vector += self.momentum_vector*self.step_size/self.m 
-                
-
-        #     self.potential_energy[t] = self.total_potential_energy()
         
-        #     self.kinetic_energy[t] = self.total_kinetic_energy()
+            self.initialise_system()
+
+            for t in range(self.num_steps):
+                self.write_to_file(t, "Euler")
+
+                self.make_force_vector()
+                self.momentum_vector += self.force*self.step_size
+                self.position_vector += self.momentum_vector*self.step_size/self.m 
+                    
+
+                self.potential_energy[t] = self.total_potential_energy()
             
-        #     total_momentum_v = np.sum(self.momentum_vector, axis = 0)
-        #     self.total_momentum[t] = np.linalg.norm(total_momentum_v)
-    
-       
-        # self.plot_values("Euler")
-        # self.write_energies("Euler")
+                self.kinetic_energy[t] = self.total_kinetic_energy()
+                
+                total_momentum_v = np.sum(self.momentum_vector, axis = 0)
+                self.total_momentum[t] = np.linalg.norm(total_momentum_v)
+        
+        
+            self.plot_values("Euler")
+            self.write_energies("Euler")
 
-        self.initialise_system()
+    #--------------------------------------------------------------------------------------------------
 
-        for t in range(self.num_steps):
-            self.write_to_file(t, "Verlet")
+    #---------------------------VERLET INTEGRATION-----------------------------------------------------
 
-            self.momentum_vector += self.force*self.step_size/2
-            self.make_force_vector()
-            self.momentum_vector += self.force*self.step_size/2
-            self.position_vector += self.momentum_vector*self.step_size/self.m + self.force/(2*self.m)*(self.step_size)**2
+        elif INTEGRATION_TYPE == "verlet":
+        
+            files = glob.glob('Verlet/*')
+            for f in files:
+                os.remove(f)
 
-            if (PERIODIC):
+            self.initialise_system()
+
+            for t in range(self.num_steps):
+                self.write_to_file(t, "Verlet")
+
+                self.momentum_vector += self.force*self.step_size/2
+                self.make_force_vector()
+                self.momentum_vector += self.force*self.step_size/2
+                self.position_vector += self.momentum_vector*self.step_size/self.m + self.force/(2*self.m)*(self.step_size)**2
+
+                self.potential_energy[t] = self.total_potential_energy()
+            
+                self.kinetic_energy[t] = self.total_kinetic_energy()
+
+                total_momentum_v = np.sum(self.momentum_vector, axis = 0)
+                self.total_momentum[t] = np.linalg.norm(total_momentum_v)
+
+            self.plot_values("Verlet")
+            self.write_energies("Verlet")
+
+    #--------------------------------------PERIODIC VERLET INTEGRATION----------------------------------------------
+
+        elif INTEGRATION_TYPE == "periodic_verlet":
+            
+            files = glob.glob('PeriodicVerlet/*')
+            for f in files:
+                os.remove(f)
+
+            self.initialise_system()
+
+            for t in range(self.num_steps):
+                self.write_to_file(t, "PeriodicVerlet")
+
+                self.momentum_vector += self.force*self.step_size/2
+                self.make_force_vector()
+                self.momentum_vector += self.force*self.step_size/2
+                self.position_vector += self.momentum_vector*self.step_size/self.m + self.force/(2*self.m)*(self.step_size)**2
+
+                
                 for i in range(self.N):
                     if (self.position_vector[i][0] > self.len): self.position_vector[i][0] %= self.len
                     if (self.position_vector[i][1] > self.len): self.position_vector[i][1] %= self.len
                     if (self.position_vector[i][2] > self.len): self.position_vector[i][2] %= self.len
                     
 
-            self.potential_energy[t] = self.total_potential_energy()
-        
-            self.kinetic_energy[t] = self.total_kinetic_energy()
+                self.potential_energy[t] = self.total_potential_energy()
+            
+                self.kinetic_energy[t] = self.total_kinetic_energy()
 
-            total_momentum_v = np.sum(self.momentum_vector, axis = 0)
-            self.total_momentum[t] = np.linalg.norm(total_momentum_v)
+                total_momentum_v = np.sum(self.momentum_vector, axis = 0)
+                self.total_momentum[t] = np.linalg.norm(total_momentum_v)
 
-        self.plot_values("Verlet")
-        self.write_energies("Verlet")
+            self.plot_values("PeriodicVerlet")
+            self.write_energies("PeriodicVerlet")
+
+    #-------------------------------------------------------------------------------------------------------------------------
+
+    
             
 
 sigma = 3.4 * 10**-10
 epsilon = 1.65 * 10**-21
 volume = 1
+
+# Give the parameters you'd like below:
+# All units are SI units
+# (Number of particles, epsilon, sigma, volume, number of timesteps, time interval per timestep)
 system = Simulator(20,epsilon, sigma, volume,10,1)
 system.do_calculations()
 
